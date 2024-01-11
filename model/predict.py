@@ -12,10 +12,6 @@ from model import AlexNet
 def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    data_transform = transforms.Compose(
-        [transforms.Resize((224, 224)),
-         transforms.ToTensor(),
-         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     # load image
     img_path = "../tulip.jpg"

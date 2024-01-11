@@ -1,87 +1,49 @@
-import os
 import sys
-import json
+
+import hdf5storage
+import os
 
 import torch
-import torch.nn as nn
-from torchvision import transforms, datasets, utils
-import matplotlib.pyplot as plt
-import numpy as np
-import torch.optim as optim
+from torch import nn
+from torch.utils.data import TensorDataset, random_split, DataLoader
 from tqdm import tqdm
+from read_data import read_data
+from model import FullConnectedNet
 
-from model import AlexNet
 
-
-def main():
+if __name__ == "__main__":
+    X, Y = read_data(dataset="100Leaves")
+    Y = Y.reshape(-1)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print("using {} device.".format(device))
 
-    data_transform = {
-        "train": transforms.Compose([transforms.RandomResizedCrop(224),  # 随机裁剪为224*224
-                                     transforms.RandomHorizontalFlip(),  # 水平方向随机翻转
-                                     transforms.ToTensor(),
-                                     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]),
-        "val": transforms.Compose([transforms.Resize((224, 224)),  # cannot 224, must (224, 224)
-                                   transforms.ToTensor(),
-                                   transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])}
+    data_tensor = torch.tensor(X, dtype=torch.float32)
+    label_tensor = torch.tensor(Y, dtype=torch.long)
 
-    data_root = os.path.abspath("D:\code\deep-learning-for-image-processing-master")  # get data root path
-    image_path = os.path.join(data_root, "data_set", "flower_data")  # flower data set path
-    assert os.path.exists(image_path), "{} path does not exist.".format(image_path)
-    train_dataset = datasets.ImageFolder(root=os.path.join(image_path, "train"),
-                                         transform=data_transform["train"])
+    dataset = TensorDataset(data_tensor, label_tensor)
 
-    train_num = len(train_dataset)
+    train_size = int(0.9 * len(dataset))
+    test_size = len(dataset) - train_size
 
-    # {'daisy':0, 'dandelion':1, 'roses':2, 'sunflower':3, 'tulips':4}
-    flower_list = train_dataset.class_to_idx
-    cla_dict = dict((val, key) for key, val in flower_list.items())
-    # write dict into json file
-    json_str = json.dumps(cla_dict, indent=4)  # indent=4表示每个层级的缩进字符个数。若不加，则方便用于数据传输
-    with open('class_indices.json', 'w') as json_file:
-        json_file.write(json_str)
+    train_set, test_set = random_split(dataset, [train_size, test_size])
+    train_loader = DataLoader(train_set, batch_size=32, shuffle=True)
+    validate_loader = DataLoader(test_set, batch_size=32, shuffle=False)
 
-    batch_size = 32
-    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])  # number of workers
-    print('Using {} dataloader workers every process'.format(nw))
+    val_num = len(test_set)
 
-    train_loader = torch.utils.data.DataLoader(train_dataset,
-                                               batch_size=batch_size, shuffle=True,
-                                               num_workers=nw)
-
-    validate_dataset = datasets.ImageFolder(root=os.path.join(image_path, "val"),
-                                            transform=data_transform["val"])
-    val_num = len(validate_dataset)
-    validate_loader = torch.utils.data.DataLoader(validate_dataset,
-                                                  batch_size=4, shuffle=False,
-                                                  num_workers=nw)
-
-    print("using {} images for training, {} images for validation.".format(train_num,
-                                                                           val_num))
-    # test_data_iter = iter(validate_loader)
-    # test_image, test_label = test_data_iter.next()
-    #
-    # def imshow(img):
-    #     img = img / 2 + 0.5  # unnormalize
-    #     npimg = img.numpy()
-    #     plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    #     plt.show()
-    #
-    # print(' '.join('%5s' % cla_dict[test_label[j].item()] for j in range(4)))
-    # imshow(utils.make_grid(test_image))
-
-    net = AlexNet(num_classes=5, init_weights=True)
-
+    # Create model
+    net = FullConnectedNet()
     net.to(device)
-    loss_function = nn.CrossEntropyLoss()
-    # pata = list(net.parameters())
-    optimizer = optim.Adam(net.parameters(), lr=0.0002)
 
-    epochs = 10
-    save_path = './AlexNet.pth'
+    optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
+    loss_function = nn.CrossEntropyLoss()
+
+    epochs = 1000
+
+    # load model weights
+    save_path = "./FullConnectedNet.pth"
     best_acc = 0.0
     train_steps = len(train_loader)
+
     for epoch in range(epochs):
         # train
         net.train()
@@ -89,43 +51,35 @@ def main():
         train_bar = tqdm(train_loader, file=sys.stdout)
         for step, data in enumerate(train_bar):
             images, labels = data
-            print(images.shape)
-            continue
+            labels = labels - 1
             optimizer.zero_grad()
             outputs = net(images.to(device))
             loss = loss_function(outputs, labels.to(device))
             loss.backward()
             optimizer.step()
 
-            # print statistics
             running_loss += loss.item()
 
-            # 设置进度条的描述信息
             train_bar.desc = "train epoch[{}/{}] loss:{:.3f}".format(epoch + 1,
                                                                      epochs,
                                                                      loss)
 
         # validate
         net.eval()
-        acc = 0.0  # accumulate accurate number / epoch
+        acc = 0.0
         with torch.no_grad():
             val_bar = tqdm(validate_loader, file=sys.stdout)
             for val_data in val_bar:
                 val_images, val_labels = val_data
+                val_labels = val_labels - 1
                 outputs = net(val_images.to(device))
-                predict_y = torch.max(outputs, dim=1)[1]  # torch.max[0]是数值，[1]是下标
+                predict_y = torch.max(outputs, dim=1)[1]
                 acc += torch.eq(predict_y, val_labels.to(device)).sum().item()
+            val_accurate = acc / val_num
+            print('[epoch %d] train_loss: %.3f  val_accuracy: %.3f' %
+                  (epoch + 1, running_loss / train_steps, val_accurate))
+            if val_accurate > best_acc:
+                best_acc = val_accurate
+                torch.save(net.state_dict(), save_path)
 
-        val_accurate = acc / val_num
-        print('[epoch %d] train_loss: %.3f  val_accuracy: %.3f' %
-              (epoch + 1, running_loss / train_steps, val_accurate))
-
-        if val_accurate > best_acc:
-            best_acc = val_accurate
-            torch.save(net.state_dict(), save_path)
-
-    print('Finished Training')
-
-
-if __name__ == '__main__':
-    main()
+    print("Finished Training. The best accuracy is: {}".format(best_acc))
