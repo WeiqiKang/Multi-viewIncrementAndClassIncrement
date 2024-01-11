@@ -2,6 +2,19 @@ import torch.nn as nn
 import torch
 
 
+class FullConnectedNet(nn.Module):
+    def __init__(self):
+        super(FullConnectedNet, self).__init__()
+        self.fc1 = nn.Linear(64, 128)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(128, 100)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        return x
+
 class AlexNet(nn.Module):
     def __init__(self, num_classes=1000, init_weights=False):  # num_classes表示类别个数
         super(AlexNet, self).__init__()
@@ -54,3 +67,4 @@ class AlexNet(nn.Module):
             elif isinstance(m, nn.Linear):  # 判断m是不是全连接层
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
+
