@@ -1,43 +1,27 @@
 import sys
 
-import hdf5storage
-import os
-
 import torch
 from torch import nn
 from torch.utils.data import TensorDataset, random_split, DataLoader
 from tqdm import tqdm
 from read_data import read_data
-from model import FullConnectedNet
+from model import FullConnectedNet, CosineClassifier
 
 
-if __name__ == "__main__":
-    X, Y = read_data(dataset="100Leaves")
-    Y = Y.reshape(-1)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    data_tensor = torch.tensor(X, dtype=torch.float32)
-    label_tensor = torch.tensor(Y, dtype=torch.long)
-
-    dataset = TensorDataset(data_tensor, label_tensor)
-
+def train_one_task(model, dataset):
     train_size = int(0.9 * len(dataset))
     test_size = len(dataset) - train_size
 
     train_set, test_set = random_split(dataset, [train_size, test_size])
-    train_loader = DataLoader(train_set, batch_size=32, shuffle=True)
-    validate_loader = DataLoader(test_set, batch_size=32, shuffle=False)
+    train_loader = DataLoader(train_set, batch_size=16, shuffle=True)
+    validate_loader = DataLoader(test_set, batch_size=16, shuffle=False)
 
     val_num = len(test_set)
-
-    # Create model
-    net = FullConnectedNet()
-    net.to(device)
 
     optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
     loss_function = nn.CrossEntropyLoss()
 
-    epochs = 1000
+    epochs = 100
 
     # load model weights
     save_path = "./FullConnectedNet.pth"
@@ -83,3 +67,37 @@ if __name__ == "__main__":
                 torch.save(net.state_dict(), save_path)
 
     print("Finished Training. The best accuracy is: {}".format(best_acc))
+
+
+if __name__ == "__main__":
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # 读取数据集
+    X, Y = read_data(dataset="100Leaves")
+    Y = Y.reshape(-1)
+
+    # 将数据集转换为tensor
+    data_tensor = torch.tensor(X, dtype=torch.float32)
+    label_tensor = torch.tensor(Y, dtype=torch.long)
+
+    # 打包数据集
+    dataset = TensorDataset(data_tensor, label_tensor)
+
+    # 定义分类器，采用全连接分类器
+    net = FullConnectedNet(in_features=64, n_classes=100)
+    net.to(device)
+
+    # 定义阶段个数
+    num_tasks = 5
+
+    # 分割数据集，将数据集随机分成num_tasks份
+    total_size = len(dataset)
+    subset_size = total_size // num_tasks
+    sizes = [subset_size] * (num_tasks - 1)
+    sizes.append(total_size - sum(sizes))
+    subsets = random_split(dataset, sizes)  # 此时subsets是一个列表，包含了10个随机分割的子数据集，每个子数据集都是TensorDataset类型
+
+    # 对每个阶段进行训练
+    for task in range(num_tasks):
+        print("Task {}/{}".format(task+1, num_tasks))
+        train_one_task(net, subsets[task])
+        print("Finished Task {}/{}".format(task+1, num_tasks))

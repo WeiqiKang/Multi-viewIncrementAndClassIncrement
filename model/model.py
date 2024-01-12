@@ -1,19 +1,49 @@
+import math
+
 import torch.nn as nn
 import torch
+from torch.nn import Parameter
+from torch.nn import functional as F
 
 
 class FullConnectedNet(nn.Module):
-    def __init__(self):
+    def __init__(self, in_features, n_classes):
         super(FullConnectedNet, self).__init__()
-        self.fc1 = nn.Linear(64, 128)
+        self.fc1 = nn.Linear(in_features, 128)
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(128, 100)
+        self.fc2 = nn.Linear(128, n_classes)
 
     def forward(self, x):
         x = self.fc1(x)
         x = self.relu(x)
         x = self.fc2(x)
         return x
+
+class CosineClassifier(nn.Module):
+    def __init__(self, in_features, n_classes, sigma=True):
+        super(CosineClassifier, self).__init__()
+        self.in_features = in_features
+        self.out_features = n_classes
+        self.weight = Parameter(torch.Tensor(n_classes, in_features))
+        if sigma:
+            self.sigma = Parameter(torch.Tensor(1))
+        else:
+            self.register_parameter('sigma', None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1. / math.sqrt(self.weight.size(1))
+        self.weight.data.uniform_(-stdv, stdv)
+        if self.sigma is not None:
+            self.sigma.data.fill_(1)  #for initializaiton of sigma
+
+    def forward(self, input):
+        out = F.linear(F.normalize(input, p=2, dim=1), F.normalize(self.weight, p=2, dim=1))
+        if self.sigma is not None:
+            out = self.sigma * out
+        return out
+
+
 
 class AlexNet(nn.Module):
     def __init__(self, num_classes=1000, init_weights=False):  # num_classes表示类别个数
