@@ -1,4 +1,3 @@
-import sys
 import os
 import argparse
 
@@ -8,6 +7,8 @@ from torch.utils.data import random_split, DataLoader
 from tqdm import tqdm
 from data import Multi_view_data
 from model import TMC
+
+from continual_learner import EWC
 
 test_acc = []
 
@@ -30,14 +31,7 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-def train_one_task(model, dataset):
-    # 定义训练集和测试集的大小
-    train_size = int(0.8 * len(dataset))
-    test_size = len(dataset) - train_size
-
-    # 分割数据集
-    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
-
+def train_one_task(model, train_dataset, test_dataset, ewc, num_task):
     # 定义Dataloader
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
@@ -58,6 +52,8 @@ def train_one_task(model, dataset):
             # refresh the optimizer
             optimizer.zero_grad()
             evidences, evidence_a, loss = model(data, target, epoch)
+            if num_task > 0:
+                loss += ewc.ewc_loss(lambda_ewc=0.5)
             # compute gradients and take step
             loss.backward()
             optimizer.step()
@@ -88,7 +84,6 @@ def train_one_task(model, dataset):
     test(epoch)
 
 
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -116,7 +111,7 @@ if __name__ == "__main__":
     model.cuda(device=cuda_device)
 
     # 定义阶段个数，为1时表示单阶段
-    num_tasks = 1
+    num_tasks = 5
 
     # 分割数据集，将数据集随机分成num_tasks份
     total_size = len(full_dataset)
@@ -125,9 +120,25 @@ if __name__ == "__main__":
     sizes.append(total_size - sum(sizes))
     subsets = random_split(full_dataset, sizes)  # 此时subsets是一个列表，包含了num_tasks个随机分割的子数据集
 
+    # 持续学习EWC
+    ewc = None
+
     # 对每个阶段进行训练
     for task in range(num_tasks):
+        # 定义训练集和测试集的大小
+        train_size = int(0.8 * len(subsets[task]))
+        test_size = len(subsets[task]) - train_size
+
+        # 分割数据集
+        train_dataset, test_dataset = random_split(subsets[task], [train_size, test_size])
+
+        # 训练
         print("Task {}/{}".format(task + 1, num_tasks))
-        train_one_task(model, subsets[task])
+        train_one_task(model, train_dataset, test_dataset, ewc, task)
         print("Finished Task {}/{}".format(task + 1, num_tasks))
+
+        # 更新持续学习EWC
+        ewc = EWC(model, train_dataset, args.epochs, args.batch_size, cuda_device)
+
+
     print(test_acc)

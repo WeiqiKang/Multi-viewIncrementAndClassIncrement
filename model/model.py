@@ -42,20 +42,6 @@ def ce_loss(p, alpha, c, global_step, annealing_step):
 
     return (A + B)
 
-
-def mse_loss(p, alpha, c, global_step, annealing_step=1):
-    S = torch.sum(alpha, dim=1, keepdim=True)
-    E = alpha - 1
-    m = alpha / S
-    label = F.one_hot(p, num_classes=c)
-    A = torch.sum((label - m) ** 2, dim=1, keepdim=True)
-    B = torch.sum(alpha * (S - alpha) / (S * S * (S + 1)), dim=1, keepdim=True)
-    annealing_coef = min(1, global_step / annealing_step)
-    alp = E * (1 - label) + 1
-    C = annealing_coef * KL(alp, c)
-    return (A + B) + C
-
-
 class TMC(nn.Module):
 
     def __init__(self, classes, views, classifier_dims, lambda_epochs=1):
@@ -133,7 +119,7 @@ class TMC(nn.Module):
         # 对每个视图分别求出e, alpha
         for v_num in range(len(X)):
             alpha[v_num] = evidence[v_num] + 1
-            loss += ce_loss(y, alpha[v_num], self.classes, global_step, self.lambda_epochs)
+            loss += ce_loss(y, alpha[v_num], self.classes,  global_step, self.lambda_epochs)
 
         # 视图融合
         alpha_a = self.DS_Combin(alpha)
