@@ -4,6 +4,7 @@ import numpy as np
 import hdf5storage
 from torch.utils.data import Dataset, ConcatDataset, Subset
 from sklearn.preprocessing import MinMaxScaler
+from torch.utils.data import DataLoader
 
 class Multi_view_data(Dataset):
     """
@@ -74,12 +75,11 @@ def get_class_i(dataset, class_i, y_intervals):
 
     return class_i_train_dataset, class_i_test_dataset
 
-def split_dataset_by_class(dataset):
+def split_dataset_by_class(dataset, session):
     """
     按类分割数据集，每个阶段的类不相互重叠。训练集80%，测试集20%
-    :param y_intervals: 每个类别y对应的区间
-    :param dataset_name: 数据集名称
     :param dataset: 所要分割的数据集
+    :param session: session 0 使用前60%的类，session 1~n使用后40%的类
     :return: 2个值，其一是一个列表，第i个值代表第i个类的训练集
     另一个是测试数据集，包含上述所有阶段的类
     """
@@ -94,17 +94,53 @@ def split_dataset_by_class(dataset):
         else:
             y_intervals[int(label)][1] = i
 
-    print(y_intervals)
+    # print(y_intervals)
 
     test_set = None  # 分割后的测试数据集，要求包含所有类
     train_set_by_class = []
 
-    for i in range(y_labels_size):
-        tmp = get_class_i(dataset, i, y_intervals)
-        train_set_by_class.append(tmp[0])
-        if test_set is not None:
-            test_set = ConcatDataset([test_set, tmp[1]])
-        else:
-            test_set = tmp[1]
+    if session == 0:
+
+        for i in range(int(y_labels_size * 0.6)):
+            tmp = get_class_i(dataset, i, y_intervals)
+            train_set_by_class.append(tmp[0])
+            if test_set is not None:
+                test_set = ConcatDataset([test_set, tmp[1]])
+            else:
+                test_set = tmp[1]
+    
+    else:
+
+        for i in range(int(y_labels_size * 0.6) + 1, y_labels_size):
+            tmp = get_class_i(dataset, i, y_intervals)
+            train_set_by_class.append(tmp[0])
+            if test_set is not None:
+                test_set = ConcatDataset([test_set, tmp[1]])
+            else:
+                test_set = tmp[1]
+
 
     return train_set_by_class, test_set
+
+def set_up_datasets(args):
+    if args.data_name == "100Leaves":
+        args.data_path = os.path.join("data", args.data_name + ".mat")
+        args.dims = [[64], [64], [64]]  # 每个视图的维度
+        args.views = len(args.dims)  # 视图个数
+        args.num_classes = 100
+    
+    return args
+
+def get_base_dataloader(args, train_set_by_class, test_set):
+    # session 0 使用前60%的类进行预训练，由于前面已经处理好了，所以这里就不用取前60%了
+    trainset = train_set_by_class[0]
+    for k in range(args.num_classes):
+        trainset = ConcatDataset([trainset, train_set_by_class[k]])
+
+    trainloader = DataLoader(dataset=trainset, batch_size=args.batch_size_base, shuffle=False, 
+                             num_workers=8, pin_memory=True)
+
+    testloader = DataLoader(dataset=test_set, batch_size=args.test_batch_size, shuffle=True, num_workers=8, pin_memory=True)
+
+    return trainset, trainloader, testloader
+
