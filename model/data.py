@@ -127,14 +127,16 @@ def set_up_datasets(args):
         args.data_path = os.path.join("data", args.data_name + ".mat")
         args.dims = [[64], [64], [64]]  # 每个视图的维度
         args.views = len(args.dims)  # 视图个数
+        args.base_class = 60  # session 0 使用的类
         args.num_classes = 100
-    
+        args.way = 5 # session 1~n 每次增加的类个数  第session个阶段使用的类计算公式：base_class + session * way
+
     return args
 
 def get_base_dataloader(args, train_set_by_class, test_set):
     # session 0 使用前60%的类进行预训练，由于前面已经处理好了，所以这里就不用取前60%了
     trainset = train_set_by_class[0]
-    for k in range(args.num_classes):
+    for k in range(1, args.num_classes):
         trainset = ConcatDataset([trainset, train_set_by_class[k]])
 
     trainloader = DataLoader(dataset=trainset, batch_size=args.batch_size_base, shuffle=False, 

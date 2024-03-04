@@ -113,9 +113,10 @@ def get_command_line_parser():
     parser.add_argument('-lr_base', type=float, default=0.1)
     parser.add_argument('-decay', type=float, default=0.0005)
     parser.add_argument('-step', type=int, default=40)
+    parser.add_argument('-momentum', type=float, default=0.9)
     parser.add_argument('-gamma', type=float, default=0.1)
     parser.add_argument('-milestones', nargs='+', type=int, default=[60, 70])
-    parser.add_argument('--batch-size-base', type=int, default=64, metavar='N',
+    parser.add_argument('-batch_size_base', type=int, default=64, metavar='N',
                         help='input batch size for training [default: 100]')
     parser.add_argument('--batch-size-new', type=int, default=0, help='set 0 will use all the availiable training image for new')
     parser.add_argument('--test-batch-size', type=int, default=64)
@@ -124,12 +125,14 @@ def get_command_line_parser():
                         help='gradually increase the value of lambda from 0 to 1')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                         help='learning rate')
-    
+    parser.add_argument('-not_data_init', action='store_true', help='using average data embedding to init or not')
+
     # about hardware
     parser.add_argument('--gpu', default='0,1,2,3')
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--seed', type=int, default=1)
-
+    parser.add_argument('-debug', action='store_true')
+    
     return parser
 
 if __name__ == "__main__":

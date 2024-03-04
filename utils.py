@@ -75,7 +75,7 @@ class Timer():
 def count_acc(logits, label):
     pred = torch.argmax(logits, dim=1)
     if torch.cuda.is_available():
-        return (pred == label).type(torch.cuda.FloatTensor).mean().item()
+        return (pred == label).type(torch.cuda.FloatTensor).mean().item()  # 加上.mean()求出的是准确率，不加就是一个01向量
     else:
         return (pred == label).type(torch.FloatTensor).mean().item()
 

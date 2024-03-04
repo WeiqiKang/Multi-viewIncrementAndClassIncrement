@@ -6,6 +6,7 @@ from model.data import *
 from model.model import TMC
 import torch
 import time
+from .helper import *
 
 class FSCILTrainer(Trainer):
     def __init__(self, args):
@@ -13,6 +14,7 @@ class FSCILTrainer(Trainer):
         self.args = args
         self.args = set_up_datasets(self.args)
         self.set_up_model()
+        self.set_save_path()
 
     def set_up_model(self): # 设置当前训练类的model
         args = self.args
@@ -61,8 +63,8 @@ class FSCILTrainer(Trainer):
             # 分割数据集，按类别分割，保存在数组里
             train_set_by_class, test_set = split_dataset_by_class(dataset=self.full_dataset, session=session)
             train_set, trainloader, testloader = self.get_dataloader(session, train_set_by_class, test_set)
-
-            self.model.load_state_dict(self.best_model_dict)
+ 
+            self.model.load_state_dict(self.best_model_dict) 
 
             if session == 0:
                 print('new classes for this session:\n', list(range(60)))
@@ -72,3 +74,65 @@ class FSCILTrainer(Trainer):
                     start_time = time.time()
                     # 在上面取出的base数据集上训练
                     tl, ta = base_train(self.model, trainloader, optimizer, scheduler, epoch, args)
+                    # 在所有seen class上进行测试
+                    tsl, tsa = test(self.model, testloader, epoch, args, session)
+
+                    # save better model
+                    if (tsa * 100) >= self.trlog['max_acc'][session]:
+                        self.trlog['max_acc'][session] = float('%.3f' % (tsa * 100))
+                        self.trlog['max_acc_epoch'] = epoch
+                        save_model_dir = os.path.join(args.save_path, 'session' + str(session) + '_max_acc.pth')
+                        torch.save(dict(params=self.model.state_dict()), save_model_dir)
+                        torch.save(optimizer.state_dict(), os.path.join(args.save_path, 'optimizer_best.pth'))
+                        self.best_model_dict = deepcopy(self.model.state_dict())
+                        print('********A better model is found!!**********')
+                        print('Saving model to :%s' % save_model_dir)
+                    print('best epoch {}, best test acc={:.3f}'.format(self.trlog['max_acc_epoch'],
+                                                                       self.trlog['max_acc'][session]))
+                    self.trlog['train_loss'].append(tl)
+                    self.trlog['train_acc'].append(ta)
+                    self.trlog['test_loss'].append(tsl)
+                    self.trlog['test_acc'].append(tsa)
+
+                    lrc = scheduler.get_last_lr()[0]
+                    result_list.append(
+                        'epoch:%03d,lr:%.4f,training_loss:%.5f,training_acc:%.5f,test_loss:%.5f,test_acc:%.5f' % (
+                            epoch, lrc, tl, ta, tsl, tsa))
+                    print('This epoch takes %d seconds' % (time.time() - start_time),
+                          '\nstill need around %.2f mins to finish this session' % (
+                                  (time.time() - start_time) * (args.epochs_base - epoch) / 60))
+                    scheduler.step()
+                
+                result_list.append('Session {}, Test Best Epoch {},\nbest test Acc {:.4f}\n'.format(
+                    session, self.trlog['max_acc_epoch'], self.trlog['max_acc'][session], ))
+
+                if not args.not_data_init:
+                    self.model.load_state_dict(self.best_model_dict)
+                    self.model = replace_base_fc(train_set, self.model, args)
+
+
+    def set_save_path(self):
+        if not self.args.not_data_init:
+            mode = mode + '-' + 'data_init'
+
+        self.args.save_path = '%s/' % self.args.dataset
+        self.args.save_path = self.args.save_path + '%s/' % self.args.project
+        self.args.save_path = self.args.save_path + '%s-start_%d/' % (self.args.start_session)
+
+        if self.args.schedule == 'Milestone':
+            mile_stone = str(self.args.milestones).replace(" ", "").replace(',', '_')[1:-1]
+            self.args.save_path = self.args.save_path + 'Epo_%d-Lr_%.4f-MS_%s-Gam_%.2f-Bs_%d-Mom_%.2f' % (
+                self.args.epochs_base, self.args.lr_base, mile_stone, self.args.gamma, self.args.batch_size_base,
+                self.args.momentum)
+        elif self.args.schedule == 'Step':
+            self.args.save_path = self.args.save_path + 'Epo_%d-Lr_%.4f-Step_%d-Gam_%.2f-Bs_%d-Mom_%.2f' % (
+                self.args.epochs_base, self.args.lr_base, self.args.step, self.args.gamma, self.args.batch_size_base,
+                self.args.momentum)
+            
+        if self.args.debug:
+            self.args.save_path = os.path.join('debug', self.args.save_path)
+
+        self.args.save_path = os.path.join('checkpoint', self.args.save_path)
+
+        ensure_path(self.args.save_path)
+        return None
