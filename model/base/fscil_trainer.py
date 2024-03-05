@@ -61,7 +61,8 @@ class FSCILTrainer(Trainer):
 
         for session in range(args.start_session, args.sessions):
             # 分割数据集，按类别分割，保存在数组里
-            train_set_by_class, test_set = split_dataset_by_class(dataset=self.full_dataset, session=session)
+            train_set_by_class, test_set = split_dataset_by_class(self.full_dataset, session, args)
+            # 上述函数已经取出了包含args.base_class + session * args.way这些类的数据集，按类别进行索引
             train_set, trainloader, testloader = self.get_dataloader(session, train_set_by_class, test_set)
  
             self.model.load_state_dict(self.best_model_dict) 
@@ -109,15 +110,50 @@ class FSCILTrainer(Trainer):
                 if not args.not_data_init:
                     self.model.load_state_dict(self.best_model_dict)
                     self.model = replace_base_fc(train_set, self.model, args)
+                    best_model_dir = os.path.join(args.save_path, 'session' + str(session) + '_max_acc.pth')
+                    print('Replace the fc with average embedding, and save it to :%s' % best_model_dir)
+                    self.best_model_dict = deepcopy(self.model.state_dict())
+                    torch.save(dict(params=self.model.state_dict()), best_model_dir)
 
+                    tsl, tsa = test(self.model, testloader, 0, args, session)
+                    if (tsa * 100) >= self.trlog['max_acc'][session]:
+                        self.trlog['max_acc'][session] = float('%.3f' % (tsa * 100))
+                        print('The new best test acc of base session={:.3f}'.format(self.trlog['max_acc'][session]))
+            else:
+                print("training session: [%d]" % session)
+                self.model.eval()
+                start_class = args.base_class + args.way * (session - 1)
+                end_class = start_class + args.way - 1
+                class_list = np.array(list(range(start_class, end_class + 1)))
+                self.model.module.update_fc(trainloader, class_list, session)
+
+                tsl, tsa = test(self.model, testloader, 0, args, session)
+
+                # save model
+                self.trlog['max_acc'][session] = float('%.3f' % (tsa * 100))
+                save_model_dir = os.path.join(args.save_path, 'session' + str(session) + '_max_acc.pth')
+                torch.save(dict(params=self.model.state_dict()), save_model_dir)
+                self.best_model_dict = deepcopy(self.model.state_dict())
+                print('Saving model to :%s' % save_model_dir)
+                print('  test acc={:.3f}'.format(self.trlog['max_acc'][session]))
+
+                result_list.append('Session {}, test Acc {:.3f}\n'.format(session, self.trlog['max_acc'][session]))
+
+        result_list.append('Base Session Best Epoch {}\n'.format(self.trlog['max_acc_epoch']))
+        result_list.append(self.trlog['max_acc'])
+        print(self.trlog['max_acc'])
+        save_list_to_txt(os.path.join(args.save_path, 'results.txt'), result_list)
+
+        t_end_time = time.time()
+        total_time = (t_end_time - t_start_time) / 60
+        print('Base Session Best epoch:', self.trlog['max_acc_epoch'])
+        print('Total time used %.2f mins' % total_time)
 
     def set_save_path(self):
-        if not self.args.not_data_init:
-            mode = mode + '-' + 'data_init'
 
         self.args.save_path = '%s/' % self.args.dataset
         self.args.save_path = self.args.save_path + '%s/' % self.args.project
-        self.args.save_path = self.args.save_path + '%s-start_%d/' % (self.args.start_session)
+        self.args.save_path = self.args.save_path + '-start_%d/' % (self.args.start_session)
 
         if self.args.schedule == 'Milestone':
             mile_stone = str(self.args.milestones).replace(" ", "").replace(',', '_')[1:-1]

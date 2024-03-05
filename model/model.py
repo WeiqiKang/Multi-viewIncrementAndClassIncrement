@@ -18,7 +18,7 @@ class FullConnectedClassifier(nn.Module):
 
 
 def KL(alpha, c):
-    beta = torch.ones((1, c)).cuda(device=4)
+    beta = torch.ones((1, c)).cuda()
     S_alpha = torch.sum(alpha, dim=1, keepdim=True)
     S_beta = torch.sum(beta, dim=1, keepdim=True)
     lnB = torch.lgamma(S_alpha) - torch.sum(torch.lgamma(alpha), dim=1, keepdim=True)
@@ -128,6 +128,8 @@ class TMC(nn.Module):
         # 优化
         loss += ce_loss(y, alpha_a, self.classes, global_step, self.lambda_epochs)
         loss = torch.mean(loss)
+
+        print(loss.item())
         return evidence, evidence_a, loss
 
     def infer(self, input):
@@ -139,6 +141,9 @@ class TMC(nn.Module):
         for v_num in range(self.views):
             evidence[v_num] = self.Classifiers[v_num](input[v_num])
         return evidence
+    
+    def update_fc(self, dataloader, class_list, session):
+        pass
 
 class Classifier(nn.Module):
     def __init__(self, classifier_dims, classes):

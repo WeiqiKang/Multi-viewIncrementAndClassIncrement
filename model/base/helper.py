@@ -23,10 +23,11 @@ def base_train(model, trainloader, optimizer, scheduler, epoch, args):
         total_loss = loss
         
         lrc = scheduler.get_last_lr()[0]
+        print(loss.item())
         tqdm_gen.set_description(
-            'Session 0, epo {}, lrc={:.4f},total loss={:.4f} acc={:.4f}'.format(epoch, lrc, total_loss.item(), acc)
+            'Session 0, epo {}, lrc={:.4f},total loss={:.4f} acc={:.4f}'.format(epoch, lrc, loss.item(), acc)
         )
-        tl.add(total_loss.item())
+        tl.add(loss.item())
         ta.add(acc)
 
         loss.backward()
@@ -90,7 +91,10 @@ def replace_base_fc(trainset, model, args):
 
     proto_list = torch.stack(proto_list, dim=0)
 
+    # 这一部分还不太确定，有待调试
     for classifier in model.module.Classifiers:
         for fc_layer in classifier.fc[:-1]:
             if fc_layer.weight.data.size(0) >= args.base_class:
                  fc_layer.weight.data[:args.base_class] = proto_list
+
+    return model
